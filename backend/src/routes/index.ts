@@ -1,0 +1,42 @@
+import { Router } from "express";
+import authRoutes from "@/routes/authRoutes";
+import clubRoutes from "@/routes/clubRoutes";
+import teamRoutes from "@/routes/teamRoutes";
+import playerRoutes from "@/routes/playerRoutes";
+import sessionRoutes from "@/routes/sessionRoutes";
+import questRoutes from "@/routes/questRoutes";
+import xpRoutes from "@/routes/xpRoutes";
+import badgeRoutes from "@/routes/badgeRoutes";
+import attendanceRoutes from "@/routes/attendanceRoutes";
+import matchRoutes from "@/routes/matchRoutes";
+import notificationRoutes from "@/routes/notificationRoutes";
+import reportRoutes from "@/routes/reportRoutes";
+import aiRoutes from "@/routes/aiRoutes";
+import visionRoutes from "@/routes/visionRoutes";
+import disRoutes from "@/routes/disRoutes";
+import assessmentRoutes from "@/routes/assessmentRoutes";
+import goalRoutes from "@/routes/goalRoutes";
+import observationRoutes from "@/routes/observationRoutes";
+
+const router = Router();
+
+router.use("/auth", authRoutes);
+router.use("/clubs", clubRoutes);
+router.use("/teams", teamRoutes);
+router.use("/players", playerRoutes);
+router.use("/sessions", sessionRoutes);
+router.use("/quests", questRoutes);
+router.use("/xp", xpRoutes);
+router.use("/badges", badgeRoutes);
+router.use("/attendance", attendanceRoutes);
+router.use("/matches", matchRoutes);
+router.use("/notifications", notificationRoutes);
+router.use("/reports", reportRoutes);
+router.use("/ai", aiRoutes);
+router.use("/vision", visionRoutes);
+router.use("/dis", disRoutes);
+router.use("/assessments", assessmentRoutes);
+router.use("/goals", goalRoutes);
+router.use("/observations", observationRoutes);
+
+export default router;

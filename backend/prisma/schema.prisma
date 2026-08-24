@@ -1,0 +1,435 @@
+// ASCEND by Agora Systems — Prisma schema
+// Product: Football Quest (flagship sport module on the ASCEND platform)
+// Implements the class diagram / ERD / domain model:
+// Club -> Coach, Team, Season
+// Team -> Player, Session, Match
+// Session -> Quest, Attendance
+// Player -> Badge (via PlayerBadge), XPLog, QuestCompletion, PlayerDNA
+// Player -> Parent
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  COACH
+  PARENT
+  PLAYER
+}
+
+enum QuestType {
+  PASSING
+  DRIBBLING
+  SHOOTING
+  DEFENDING
+  TEAMWORK
+  POSSESSION
+  CUSTOM
+}
+
+enum PlayerLevel {
+  EXPLORER
+  WARRIOR
+  CAPTAIN
+  STRATEGIST
+  LEGEND
+}
+
+// ---------- Identity ----------
+
+model User {
+  id        String   @id @default(cuid())
+  name      String
+  email     String   @unique
+  password  String
+  role      Role
+  phone     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  coach         Coach?
+  parent        Parent?
+  notifications Notification[]
+}
+
+model Coach {
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  clubId String?
+  club   Club?   @relation(fields: [clubId], references: [id])
+
+  teams Team[]
+
+  bio       String?
+  createdAt DateTime @default(now())
+
+  assessments       Assessment[]
+  goalsSet          DevelopmentGoal[]
+  observations      CoachObservation[]
+}
+
+model Parent {
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  players Player[]
+
+  createdAt DateTime @default(now())
+}
+
+// ---------- Organisation ----------
+
+model Club {
+  id      String   @id @default(cuid())
+  name    String
+  city    String?
+  coaches Coach[]
+  teams   Team[]
+  seasons Season[]
+
+  createdAt DateTime @default(now())
+}
+
+model Season {
+  id        String   @id @default(cuid())
+  name      String
+  startDate DateTime
+  endDate   DateTime
+
+  clubId String
+  club   Club   @relation(fields: [clubId], references: [id], onDelete: Cascade)
+
+  teams Team[]
+}
+
+model Team {
+  id       String @id @default(cuid())
+  name     String
+  ageGroup String // e.g. "U8", "U12"
+
+  clubId String
+  club   Club   @relation(fields: [clubId], references: [id], onDelete: Cascade)
+
+  seasonId String?
+  season   Season? @relation(fields: [seasonId], references: [id])
+
+  coachId String?
+  coach   Coach?  @relation(fields: [coachId], references: [id])
+
+  players  Player[]
+  sessions Session[]
+  matches  Match[]
+
+  createdAt DateTime @default(now())
+}
+
+// ---------- Players ----------
+
+model Player {
+  id       String    @id @default(cuid())
+  name     String
+  dob      DateTime
+  position String?
+  photoUrl String?
+
+  teamId String?
+  team   Team?   @relation(fields: [teamId], references: [id])
+
+  parentId String?
+  parent   Parent? @relation(fields: [parentId], references: [id])
+
+  overallXP Int         @default(0)
+  level     PlayerLevel @default(EXPLORER)
+
+  // "Player DNA" multidimensional profile, 0-100 each
+  dna PlayerDNA?
+
+  badges            PlayerBadge[]
+  xpLogs            XPLog[]
+  attendances       Attendance[]
+  questCompletions  QuestCompletion[]
+  homeChallenges    HomeChallengeSubmission[]
+  disSnapshots      DISSnapshot[]
+  assessments       Assessment[]
+  developmentGoals  DevelopmentGoal[]
+  observations      CoachObservation[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model PlayerDNA {
+  id             String @id @default(cuid())
+  playerId       String @unique
+  player         Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  technical      Int @default(50)
+  decisionMaking Int @default(50) // feeds the DIS "tactical" pillar
+  physical       Int @default(50) // feeds the DIS "physical" pillar
+  leadership     Int @default(50)
+  confidence     Int @default(50)
+  creativity     Int @default(50)
+  resilience     Int @default(50)
+  teamwork       Int @default(50)
+  discipline     Int @default(50)
+
+  updatedAt DateTime @updatedAt
+}
+
+// ---------- Development Intelligence Score (DIS™) ----------
+// A weighted, explainable composite score across six pillars, computed on
+// demand and snapshotted over time so coaches/parents/clubs can see growth
+// trends rather than a single static rating. See DISService for the
+// computation and weighting logic.
+model DISSnapshot {
+  id       String @id @default(cuid())
+  playerId String
+  player   Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  technical           Int // from PlayerDNA.technical
+  tactical            Int // from PlayerDNA.decisionMaking
+  physical            Int // from PlayerDNA.physical
+  character           Int // average of leadership/confidence/creativity/resilience/teamwork/discipline
+  participation       Int // derived from attendance rate
+  learningProgression Int // derived from XP trend + quest completion rate
+
+  overallScore Int // weighted composite, 0-100
+  weightsUsed  Json // snapshot of the weights applied, for explainability/auditability
+
+  computedAt DateTime @default(now())
+
+  @@index([playerId, computedAt])
+}
+
+// ---------- Training ----------
+
+model Session {
+  id              String   @id @default(cuid())
+  teamId          String
+  team            Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  date            DateTime @default(now())
+  theme           String // e.g. "Passing"
+  durationMinutes Int      @default(60)
+  coachNote       String? // raw free-text / voice-note transcript
+  aiSummary       String? // AI-generated summary of coachNote
+
+  quests      Quest[]
+  attendances Attendance[]
+
+  createdAt DateTime @default(now())
+}
+
+model Quest {
+  id          String    @id @default(cuid())
+  sessionId   String
+  session     Session   @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  title       String // e.g. "The Bridge is Broken"
+  description String?
+  type        QuestType @default(CUSTOM)
+  targetValue Int? // e.g. 30 successful passes
+  livesTotal  Int? // e.g. 3
+
+  completions QuestCompletion[]
+
+  createdAt DateTime @default(now())
+}
+
+model QuestCompletion {
+  id          String   @id @default(cuid())
+  questId     String
+  quest       Quest    @relation(fields: [questId], references: [id], onDelete: Cascade)
+
+  playerId    String
+  player      Player   @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  completed   Boolean  @default(false)
+  valueAchieved Int?
+  completedAt DateTime?
+
+  @@unique([questId, playerId])
+}
+
+model Attendance {
+  id           String   @id @default(cuid())
+  sessionId    String
+  session      Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  playerId     String
+  player       Player   @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  present      Boolean  @default(true)
+  standoutNote String? // coach note about this player for this session
+
+  @@unique([sessionId, playerId])
+}
+
+// ---------- Progression ----------
+
+model XPLog {
+  id        String   @id @default(cuid())
+  playerId  String
+  player    Player   @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  points    Int
+  reason    String // e.g. "Attendance", "Helping teammate", "Perfect effort"
+  source    String? // "coach" | "ai" | "home_challenge" | "system"
+  createdAt DateTime @default(now())
+}
+
+model Badge {
+  id          String        @id @default(cuid())
+  title       String        @unique // e.g. "Explorer Badge", "Ball Wizard"
+  description String?
+  icon        String? // emoji or icon key
+  players     PlayerBadge[]
+}
+
+model PlayerBadge {
+  id       String   @id @default(cuid())
+  playerId String
+  player   Player   @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  badgeId  String
+  badge    Badge    @relation(fields: [badgeId], references: [id], onDelete: Cascade)
+
+  earnedAt DateTime @default(now())
+
+  @@unique([playerId, badgeId])
+}
+
+model HomeChallengeSubmission {
+  id          String   @id @default(cuid())
+  playerId    String
+  player      Player   @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  title       String // e.g. "100 wall passes"
+  mediaUrl    String? // photo/video proof
+  verifiedBy  String? // parent/coach user id
+  xpAwarded   Int      @default(0)
+  createdAt   DateTime @default(now())
+}
+
+// ---------- Matches ----------
+
+model Match {
+  id            String   @id @default(cuid())
+  teamId        String
+  team          Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  opponent      String
+  date          DateTime
+  scoreFor      Int?
+  scoreAgainst  Int?
+  notes         String?
+
+  createdAt DateTime @default(now())
+}
+
+// ---------- Comms ----------
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  message   String
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
+
+// ---------- Phase 2: Development Intelligence ----------
+// Structured assessments, goal setting, and coach observations — the
+// evidence trail that feeds PlayerDNA (and therefore DIS™) with real
+// coaching judgment instead of ad hoc edits.
+
+enum AssessmentPeriod {
+  PRESEASON
+  MIDSEASON
+  POSTSEASON
+  ADHOC
+}
+
+// A structured, rubric-based evaluation a coach completes for a player.
+// Submitting one updates PlayerDNA and is the recommended way to move DIS
+// pillar inputs (vs directly PATCHing PlayerDNA).
+model Assessment {
+  id       String @id @default(cuid())
+  playerId String
+  player   Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  coachId String
+  coach   Coach  @relation(fields: [coachId], references: [id])
+
+  period AssessmentPeriod @default(ADHOC)
+
+  technical      Int
+  decisionMaking Int
+  physical       Int
+  leadership     Int
+  confidence     Int
+  creativity     Int
+  resilience     Int
+  teamwork       Int
+  discipline     Int
+
+  summary String? // short AI-assistable narrative, e.g. "Ready for more possession responsibility"
+
+  createdAt DateTime @default(now())
+
+  @@index([playerId, createdAt])
+}
+
+enum GoalStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  ACHIEVED
+  MISSED
+}
+
+// Individual development goals — "Development Goal Achievement" is a named
+// Player Development KPI in the Success Metrics chapter.
+model DevelopmentGoal {
+  id       String @id @default(cuid())
+  playerId String
+  player   Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  setByCoachId String?
+  setByCoach   Coach?  @relation(fields: [setByCoachId], references: [id])
+
+  title       String // e.g. "Complete 50 successful weak-foot passes this month"
+  description String?
+  targetDate  DateTime?
+  status      GoalStatus @default(NOT_STARTED)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// Freeform coach notes tied to a player, independent of a specific session —
+// e.g. a mid-week observation, a conversation with a parent, a safeguarding
+// note. Kept separate from Attendance.standoutNote (which is session-scoped).
+model CoachObservation {
+  id       String @id @default(cuid())
+  playerId String
+  player   Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  coachId String
+  coach   Coach  @relation(fields: [coachId], references: [id])
+
+  note      String
+  tags      String[] // e.g. ["leadership", "confidence", "injury-watch"]
+  createdAt DateTime @default(now())
+
+  @@index([playerId, createdAt])
+}
